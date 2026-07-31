@@ -1,6 +1,7 @@
 import express, { type Application } from 'express';
 import { healthRouter } from './routes/health.js';
 import { eventsRouter } from './routes/events.js';
+import { leaderboardRouter } from './routes/leaderboard.js';
 
 export function createApp(): Application {
   const app = express();
@@ -9,6 +10,7 @@ export function createApp(): Application {
 
   app.use(healthRouter);
   app.use(eventsRouter);
+  app.use(leaderboardRouter);
 
   return app;
 }
