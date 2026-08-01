@@ -203,8 +203,9 @@ export async function getLeaderboard(
 ): Promise<LeaderboardResponse> {
   const top = await getTop(weekId);
   const pool = await getLivePool(weekId);
+  const totalPlayers = await getRedis().zcard(keys.leaderboard(weekId));
 
-  const response: LeaderboardResponse = { weekId, top, pool };
+  const response: LeaderboardResponse = { weekId, top, pool, totalPlayers };
 
   if (!playerId) return response;
 

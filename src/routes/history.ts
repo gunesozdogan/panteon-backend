@@ -1,8 +1,23 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { getWeeklyStandings } from '../services/history.js';
+import { getWeeklyStandings, listArchivedWeeks } from '../services/history.js';
 
 export const historyRouter = Router();
+
+/**
+ * `GET /leaderboard/history` — lean summaries of every archived week, newest
+ * first, for the frontend "past weeks" picker. No params. Registered before the
+ * `:weekId` route (distinct paths, but kept ordered for clarity).
+ */
+historyRouter.get('/leaderboard/history', async (_req: Request, res: Response) => {
+  try {
+    const weeks = await listArchivedWeeks();
+    res.status(200).json({ weeks });
+  } catch (err) {
+    console.error('[history:list] failed:', err);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
 
 /**
  * weekId is an ISO week like `2026-W31` (matches getCurrentWeekId output), with

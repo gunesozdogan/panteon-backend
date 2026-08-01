@@ -29,6 +29,16 @@ const { store, fakeCol } = vi.hoisted(() => {
         return copy;
       },
     ),
+    aggregate: vi.fn(() => ({
+      toArray: async () =>
+        [...store.values()]
+          .map((doc) => ({
+            weekId: doc.weekId as string,
+            closedAt: doc.closedAt as string,
+            playerCount: (doc.standings as unknown[]).length,
+          }))
+          .sort((a, b) => (a.weekId < b.weekId ? 1 : -1)),
+    })),
   };
   return { store, fakeCol };
 });
@@ -40,6 +50,7 @@ vi.mock('../src/db/mongo.js', () => ({
 import {
   archiveWeeklyStandings,
   getWeeklyStandings,
+  listArchivedWeeks,
 } from '../src/services/history.js';
 
 const docFor = (weekId: string, prize: number): WeeklyStandingsDoc => ({
@@ -83,5 +94,21 @@ describe('history archive (Mongo mocked)', () => {
   it('unknown week reads back as null (→ 404 at the route)', async () => {
     const read = await getWeeklyStandings('2099-W01');
     expect(read).toBeNull();
+  });
+
+  it('lists archived weeks newest-first as lean summaries (no standings)', async () => {
+    await archiveWeeklyStandings(docFor('2026-W28', 100));
+    await archiveWeeklyStandings(docFor('2026-W30', 200));
+    await archiveWeeklyStandings(docFor('2026-W29', 150));
+
+    const weeks = await listArchivedWeeks();
+
+    expect(weeks.map((w) => w.weekId)).toEqual(['2026-W30', '2026-W29', '2026-W28']);
+    expect(weeks[0]).toEqual({
+      weekId: '2026-W30',
+      closedAt: '2026-07-27T00:00:00.000Z',
+      playerCount: 2,
+    });
+    expect(weeks[0]).not.toHaveProperty('standings');
   });
 });
