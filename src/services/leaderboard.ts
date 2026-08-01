@@ -11,6 +11,7 @@
  * tested without touching Redis.
  */
 import { getRedis } from '../db/redis.js';
+import { getUsernames } from './players.js';
 import { keys } from '../utils/keys.js';
 import type {
   LeaderboardEntry,
@@ -90,21 +91,36 @@ export function toEntries(
  * Batch-resolve usernames from the `players:meta` hash in a single `HMGET`, so
  * a 100-row page costs one round trip instead of 100 Postgres lookups.
  *
- * Phase 2 hook: on a miss we currently fall back to the playerId. Once the
- * Postgres `players` table exists, missing ids should be back-filled from it in
- * one query and written back into `players:meta`.
+ * On a cache miss we back-fill from Postgres (the source of truth) in ONE
+ * `= ANY($1)` query and warm the hash so the next read is a pure cache hit —
+ * the hash self-heals. Only truly-unknown ids fall back to the raw playerId.
  */
-async function resolveUsernames(
+export async function resolveUsernames(
   playerIds: readonly string[],
 ): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   if (playerIds.length === 0) return map;
 
-  const names = await getRedis().hmget(keys.playersMeta, ...playerIds);
+  const redis = getRedis();
+  const names = await redis.hmget(keys.playersMeta, ...playerIds);
+  const missing: string[] = [];
   playerIds.forEach((id, i) => {
     const name = names[i];
     if (name != null) map.set(id, name);
+    else missing.push(id);
   });
+
+  if (missing.length > 0) {
+    const fromPg = await getUsernames(missing);
+    if (fromPg.size > 0) {
+      const hsetArgs: string[] = [];
+      for (const [id, name] of fromPg) {
+        map.set(id, name);
+        hsetArgs.push(id, name);
+      }
+      await redis.hset(keys.playersMeta, ...hsetArgs);
+    }
+  }
   return map;
 }
 
@@ -152,11 +168,8 @@ async function getSelfView(
   const rows = parseWithScores(flat);
   const names = await resolveUsernames(rows.map((r) => r.playerId));
   const window = toEntries(rows, start + 1, (id) => names.get(id));
-
-  // The caller sits inside their own window; surface it directly too.
   const entry =
     window.find((e) => e.playerId === playerId) ??
-    // Defensive fallback: rank_0 was read a moment ago, so this should hold.
     { rank: rank0 + 1, playerId, username: names.get(playerId) ?? playerId, score: 0 };
 
   return { entry, window };

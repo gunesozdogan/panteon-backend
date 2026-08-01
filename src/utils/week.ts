@@ -28,3 +28,8 @@ export function getCurrentWeekId(date: Date = new Date()): WeekId {
 
   return `${isoYear}-W${String(week).padStart(2, '0')}`;
 }
+
+export function getPreviousWeekId(date: Date = new Date()): WeekId {
+  const aWeekAgo = new Date(date.getTime() - 7 * 86_400_000);
+  return getCurrentWeekId(aWeekAgo);
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getCurrentWeekId } from '../src/utils/week.js';
+import { getCurrentWeekId, getPreviousWeekId } from '../src/utils/week.js';
 
 const utc = (y: number, m: number, d: number, h = 0): Date =>
   new Date(Date.UTC(y, m - 1, d, h));
@@ -39,5 +39,22 @@ describe('getCurrentWeekId', () => {
     // Sun 2026-07-26 is still W30; Mon 2026-07-27 begins W31.
     expect(getCurrentWeekId(utc(2026, 7, 26))).toBe('2026-W30');
     expect(getCurrentWeekId(utc(2026, 7, 27))).toBe('2026-W31');
+  });
+});
+
+describe('getPreviousWeekId', () => {
+  it('returns the week that just ended (W31 → W30)', () => {
+    // The cron fires early Mon 2026-07-27 (W31) and must close W30.
+    expect(getPreviousWeekId(utc(2026, 7, 27))).toBe('2026-W30');
+  });
+
+  it('crosses the year boundary via ISO logic (2025-W01 → 2024-W52)', () => {
+    // Mon 2024-12-30 is 2025-W01; the previous week is 2024-W52.
+    expect(getPreviousWeekId(utc(2024, 12, 30))).toBe('2024-W52');
+  });
+
+  it('handles a 53-week predecessor year (2021-W01 → 2020-W53)', () => {
+    // Mon 2021-01-04 is 2021-W01; 2020 is a 53-week ISO year.
+    expect(getPreviousWeekId(utc(2021, 1, 4))).toBe('2020-W53');
   });
 });
