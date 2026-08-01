@@ -88,19 +88,55 @@ async function persistPayouts(
 }
 
 /**
- * Close a week: distribute its pool to the top 100, archive the standings, and
- * reset the board. Safe to call more than once for the same week (idempotent).
+ * Options that let one routine serve two callers without blurring their jobs:
  *
- * @param weekId the week to close (defaults handled by the caller/route).
+ *   - The real weekly close (cron / `POST /admin/close-week`) reads and writes
+ *     the SAME week id and RESETS the board — the defaults.
+ *   - The demo "snapshot" (`early`) reads the live week but seals its output
+ *     under a distinct `outputWeekId` (`2026-W31-early`) and does NOT reset, so
+ *     the running week is never destroyed. See docs/manual-close-week.md.
  */
-export async function closeWeek(weekId: WeekId): Promise<CloseWeekResult> {
+export interface CloseWeekOptions {
+  /**
+   * Where the payouts + Mongo archive are written. Defaults to `sourceWeekId`.
+   * A snapshot passes a distinct id (`2026-W31-early`) so it can never collide
+   * with — or overwrite — the real close of the same calendar week.
+   */
+  outputWeekId?: WeekId;
+  /**
+   * Delete the source Redis week keys after archiving (the reset). Default
+   * `true` (real close). A snapshot passes `false`: the live board keeps running.
+   */
+  reset?: boolean;
+}
+
+/**
+ * Close a week: distribute its pool to the top 100, archive the standings, and
+ * (unless `reset: false`) reset the board. Safe to call more than once for the
+ * same output week (idempotent via `UNIQUE(week_id, player_id)`).
+ *
+ * Reads always come from `lb:{sourceWeekId}`; money + archive are written under
+ * `outputWeekId` (defaults to the source). Keeping the two ids separate is what
+ * lets a mid-week snapshot seal itself under `-early` without touching the live
+ * board — and, conversely, why the real close must leave `outputWeekId` unset.
+ *
+ * @param sourceWeekId the week whose Redis board is read (and, on reset, dropped).
+ * @param opts         see {@link CloseWeekOptions}; defaults = real weekly close.
+ */
+export async function closeWeek(
+  sourceWeekId: WeekId,
+  opts: CloseWeekOptions = {},
+): Promise<CloseWeekResult> {
+  const outputWeekId = opts.outputWeekId ?? sourceWeekId;
+  const reset = opts.reset ?? true;
+
   const redis = getRedis();
-  const lbKey = keys.leaderboard(weekId);
+  const lbKey = keys.leaderboard(sourceWeekId);
   const closedAt = new Date().toISOString();
   const total = await redis.zcard(lbKey);
   if (total === 0) {
     return {
-      weekId,
+      weekId: outputWeekId,
       closedAt,
       earnTotal: 0,
       pool: 0,
@@ -112,7 +148,7 @@ export async function closeWeek(weekId: WeekId): Promise<CloseWeekResult> {
 
   const flat = await redis.zrevrange(lbKey, 0, TOP_N - 1, 'WITHSCORES');
   const rows = parseWithScores(flat);
-  const earnTotal = Number((await redis.get(keys.earnTotal(weekId))) ?? 0);
+  const earnTotal = Number((await redis.get(keys.earnTotal(sourceWeekId))) ?? 0);
   const pool = poolFromEarnTotal(earnTotal);
   const payouts = computePayouts(
     rows.map((r) => r.playerId),
@@ -129,13 +165,15 @@ export async function closeWeek(weekId: WeekId): Promise<CloseWeekResult> {
   }));
 
   const paid = standings.filter((s) => s.prize > 0);
-  const { count, sum } = await persistPayouts(weekId, paid);
+  const { count, sum } = await persistPayouts(outputWeekId, paid);
 
-  await archiveWeeklyStandings({ weekId, closedAt, standings });
-  await redis.del(lbKey, keys.earnTotal(weekId), keys.top100(weekId));
+  await archiveWeeklyStandings({ weekId: outputWeekId, closedAt, standings });
+  if (reset) {
+    await redis.del(lbKey, keys.earnTotal(sourceWeekId), keys.top100(sourceWeekId));
+  }
 
   return {
-    weekId,
+    weekId: outputWeekId,
     closedAt,
     earnTotal,
     pool,

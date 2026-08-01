@@ -4,9 +4,15 @@ import { getWeeklyStandings } from '../services/history.js';
 
 export const historyRouter = Router();
 
-/** weekId must be an ISO-week like `2026-W31` (matches getCurrentWeekId output). */
+/**
+ * weekId is an ISO week like `2026-W31` (matches getCurrentWeekId output), with
+ * an optional `-early[n]` suffix for demo snapshot archives (see admin route /
+ * docs/manual-close-week.md) so history reads can surface them too.
+ */
 const paramsSchema = z.object({
-  weekId: z.string().regex(/^\d{4}-W\d{2}$/, 'weekId must look like 2026-W31'),
+  weekId: z
+    .string()
+    .regex(/^\d{4}-W\d{2}(-early\d*)?$/, 'weekId must look like 2026-W31 or 2026-W31-early'),
 });
 
 historyRouter.get(
