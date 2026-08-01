@@ -67,7 +67,20 @@ describe('getLeaderboard (Redis mocked)', () => {
     expect(res.top.map((e) => e.rank)).toEqual([1, 2, 3]);
     expect(res.top[0]).toMatchObject({ playerId: 'p1', username: 'Name_p1', score: 900 });
     expect(res.me).toBeUndefined();
+    expect(res.totalPlayers).toBe(300);
     expect(fakeRedis.zrevrank).not.toHaveBeenCalled();
+  });
+
+  it('returns the live pool as 2% of earn_total (floored), 0 when unset', async () => {
+    // Default get() → null (earn_total unset) → pool 0.
+    expect((await getLeaderboard(WEEK)).pool).toBe(0);
+
+    // earn_total = 1_000_050 → floor(1_000_050 * 2 / 100) = 20_001.
+    // Branch by key so the top-100 cache stays a miss (null) and rebuilds.
+    fakeRedis.get.mockImplementation((key: string) =>
+      Promise.resolve(key === `earn_total:${WEEK}` ? '1000050' : null),
+    );
+    expect((await getLeaderboard(WEEK)).pool).toBe(20_001);
   });
 
   it('player not on the board (zrevrank → null) → me omitted', async () => {
@@ -84,7 +97,7 @@ describe('getLeaderboard (Redis mocked)', () => {
     const res = await getLeaderboard(WEEK, 'p1');
 
     expect(res.me).toBeUndefined();
-    expect(fakeRedis.zcard).not.toHaveBeenCalled();
+    expect(fakeRedis.zrevrange).toHaveBeenCalledTimes(1);
   });
 
   it('first player outside top 100 (rank0 = 100, display 101) → me + 6-row window [98..103]', async () => {

@@ -36,6 +36,16 @@ export interface DistributionOptions {
 const PCT = { rank1: 20, rank2: 15, rank3: 10, rest: 55 } as const;
 
 /**
+ * The distributable pool is 2% of the week's raw earnings, floored to an integer
+ * minor unit — a single, well-defined rounding point (see CLAUDE.md). Lives here,
+ * in the pure money module, so both the live read path and the close-week routine
+ * surface the exact same value.
+ */
+export function poolFromEarnTotal(earnTotal: number): number {
+  return Math.floor((earnTotal * 2) / 100);
+}
+
+/**
  * Distribute an integer `pool` (minor units) across players given in rank order
  * (index 0 = rank 1). Returns one Payout per player (capped at `boardCap`).
  *

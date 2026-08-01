@@ -16,17 +16,13 @@
  */
 import { getRedis } from '../db/redis.js';
 import { getPool } from '../db/postgres.js';
-import { computePayouts } from './distribution.js';
+import { computePayouts, poolFromEarnTotal } from './distribution.js';
 import { archiveWeeklyStandings } from './history.js';
 import { parseWithScores, resolveUsernames } from './leaderboard.js';
 import { keys } from '../utils/keys.js';
 import type { CloseWeekResult, WeeklyStanding, WeekId } from '../types/domain.js';
 
 const TOP_N = 100;
-
-function poolFromEarnTotal(earnTotal: number): number {
-  return Math.floor((earnTotal * 2) / 100);
-}
 
 async function persistPayouts(
   weekId: WeekId,

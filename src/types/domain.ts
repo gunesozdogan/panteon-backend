@@ -30,6 +30,19 @@ export interface LeaderboardResponse {
   weekId: WeekId;
   top: LeaderboardEntry[];
   /**
+   * Live prize pool for the week: 2% of total earnings so far, in integer minor
+   * units (`floor(earn_total * 2 / 100)`). Computed per-request (not part of the
+   * cached top-100 payload) so it tracks live earnings between reads.
+   */
+  pool: number;
+  /**
+   * Total number of players on the board this week — everyone who has earned at
+   * least once (`ZCARD lb:{weekId}`). O(1) in Redis and computed per-request so
+   * it tracks new joiners live. The `top` array is capped at 100, so this is the
+   * only way the UI can show the true "N players competing" figure.
+   */
+  totalPlayers: number;
+  /**
    * The caller's own view. Omitted when the caller is already in `top`
    * (they're flagged inside `top` instead) or when no playerId was supplied.
    */
@@ -66,6 +79,19 @@ export interface WeeklyStandingsDoc {
   /** ISO-8601 timestamp of when the week was closed. */
   closedAt: string;
   standings: WeeklyStanding[];
+}
+
+/**
+ * Lean summary of one archived week, returned by `GET /leaderboard/history`
+ * (the list endpoint). Lets the UI populate a "past weeks" picker without
+ * pulling every week's full standings — the `standings` array is projected out.
+ */
+export interface WeeklyStandingsSummary {
+  weekId: WeekId;
+  /** ISO-8601 timestamp of when the week was closed. */
+  closedAt: string;
+  /** How many players were in the archived standings. */
+  playerCount: number;
 }
 
 /**

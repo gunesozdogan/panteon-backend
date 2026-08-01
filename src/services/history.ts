@@ -7,7 +7,11 @@
  */
 import type { Collection } from 'mongodb';
 import { getMongoDb } from '../db/mongo.js';
-import type { WeeklyStandingsDoc, WeekId } from '../types/domain.js';
+import type {
+  WeeklyStandingsDoc,
+  WeeklyStandingsSummary,
+  WeekId,
+} from '../types/domain.js';
 
 const COLLECTION = 'weekly_standings';
 
@@ -44,4 +48,27 @@ export async function getWeeklyStandings(
 ): Promise<WeeklyStandingsDoc | null> {
   const col = await collection();
   return col.findOne({ weekId }, { projection: { _id: 0 } });
+}
+
+/**
+ * List every archived week for `GET /leaderboard/history` (the "past weeks"
+ * picker). Only lean summaries are returned — `standings` is projected out and
+ * its length pushed down to Mongo via `$size`, so listing 52 weeks never ships
+ * 52 full boards. Sorted newest-first for the dropdown.
+ */
+export async function listArchivedWeeks(): Promise<WeeklyStandingsSummary[]> {
+  const col = await collection();
+  return col
+    .aggregate<WeeklyStandingsSummary>([
+      { $sort: { weekId: -1 } },
+      {
+        $project: {
+          _id: 0,
+          weekId: 1,
+          closedAt: 1,
+          playerCount: { $size: { $ifNull: ['$standings', []] } },
+        },
+      },
+    ])
+    .toArray();
 }

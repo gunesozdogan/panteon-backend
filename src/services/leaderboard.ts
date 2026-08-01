@@ -12,6 +12,7 @@
  */
 import { getRedis } from '../db/redis.js';
 import { getUsernames } from './players.js';
+import { poolFromEarnTotal } from './distribution.js';
 import { keys } from '../utils/keys.js';
 import type {
   LeaderboardEntry,
@@ -176,6 +177,18 @@ async function getSelfView(
 }
 
 /**
+ * Read the live prize pool: 2% of the week's raw earnings so far. This is a
+ * single integer `GET` on `earn_total:{weekId}` (missing key → 0), kept OUT of
+ * the cached top-100 payload so it reflects live earnings on every read while
+ * staying cheap enough for the hot path. Mirrors the exact rounding used at
+ * close-week via the shared `poolFromEarnTotal`.
+ */
+async function getLivePool(weekId: WeekId): Promise<number> {
+  const raw = await getRedis().get(keys.earnTotal(weekId));
+  return poolFromEarnTotal(Number(raw) || 0);
+}
+
+/**
  * Serve `GET /leaderboard`: always the top 100, plus the caller's own window
  * when they are outside it.
  *
@@ -189,8 +202,10 @@ export async function getLeaderboard(
   playerId?: string,
 ): Promise<LeaderboardResponse> {
   const top = await getTop(weekId);
+  const pool = await getLivePool(weekId);
+  const totalPlayers = await getRedis().zcard(keys.leaderboard(weekId));
 
-  const response: LeaderboardResponse = { weekId, top };
+  const response: LeaderboardResponse = { weekId, top, pool, totalPlayers };
 
   if (!playerId) return response;
 
