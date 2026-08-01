@@ -22,6 +22,13 @@ const envSchema = z.object({
   CLOSE_WEEK_CRON: z.string().default('5 0 * * 1'),
   /** Timezone for the cron expression. UTC so the boundary matches weekId. */
   CRON_TIMEZONE: z.string().default('UTC'),
+  /**
+   * How many recently-ended weeks each cron tick sweeps (self-healing window).
+   * The tick closes the last N weeks, not just last week, so a missed run
+   * (crash/deploy) is caught up next time. Already-closed weeks are cheap no-ops
+   * (`closeWeek` zcard guard). Default 4 (~one month of catch-up).
+   */
+  CLOSE_SWEEP_WEEKS: z.coerce.number().int().positive().default(4),
 });
 
 const parsed = envSchema.safeParse(process.env);

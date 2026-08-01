@@ -33,3 +33,22 @@ export function getPreviousWeekId(date: Date = new Date()): WeekId {
   const aWeekAgo = new Date(date.getTime() - 7 * 86_400_000);
   return getCurrentWeekId(aWeekAgo);
 }
+
+/**
+ * The `count` most recently ended weeks, newest first — e.g. for `count = 3` on
+ * a date in `2026-W31`: `['2026-W30', '2026-W29', '2026-W28']`. Pure function of
+ * its input (UTC), like the rest of this module.
+ *
+ * This is the self-healing window for the weekly-close cron: each tick closes
+ * not just last week but the last `count` weeks, so a tick that was missed
+ * (crash, deploy, an instance that never scheduled) is caught up on the next
+ * run. `closeWeek`'s `zcard == 0` guard makes every already-closed week in the
+ * window a cheap no-op, so the sweep is safe to run every tick.
+ */
+export function getRecentWeekIds(count: number, date: Date = new Date()): WeekId[] {
+  const ids: WeekId[] = [];
+  for (let k = 1; k <= count; k++) {
+    ids.push(getCurrentWeekId(new Date(date.getTime() - k * 7 * 86_400_000)));
+  }
+  return ids;
+}

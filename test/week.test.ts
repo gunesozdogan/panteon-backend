@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getCurrentWeekId, getPreviousWeekId } from '../src/utils/week.js';
+import { getCurrentWeekId, getPreviousWeekId, getRecentWeekIds } from '../src/utils/week.js';
 
 const utc = (y: number, m: number, d: number, h = 0): Date =>
   new Date(Date.UTC(y, m - 1, d, h));
@@ -56,5 +56,30 @@ describe('getPreviousWeekId', () => {
   it('handles a 53-week predecessor year (2021-W01 → 2020-W53)', () => {
     // Mon 2021-01-04 is 2021-W01; 2020 is a 53-week ISO year.
     expect(getPreviousWeekId(utc(2021, 1, 4))).toBe('2020-W53');
+  });
+});
+
+describe('getRecentWeekIds (cron sweep window)', () => {
+  it('returns the last N ended weeks, newest first, excluding the current week', () => {
+    expect(getRecentWeekIds(4, utc(2026, 7, 29))).toEqual([
+      '2026-W30',
+      '2026-W29',
+      '2026-W28',
+      '2026-W27',
+    ]);
+  });
+
+  it('agrees with getPreviousWeekId on the newest entry', () => {
+    const date = utc(2026, 7, 27);
+    expect(getRecentWeekIds(3, date)[0]).toBe(getPreviousWeekId(date));
+  });
+
+  it('crosses the year boundary via ISO logic', () => {
+    expect(getRecentWeekIds(2, utc(2025, 1, 6))).toEqual(['2025-W01', '2024-W52']);
+  });
+
+  it('produces distinct ids (each 7-day step lands in a new week)', () => {
+    const ids = getRecentWeekIds(4, utc(2026, 7, 29));
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

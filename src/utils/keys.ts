@@ -13,4 +13,10 @@ export const keys = {
   top100: (weekId: WeekId): string => `lb:top100:${weekId}`,
   /** Hash playerId -> username, so the read path never queries Postgres per row. */
   playersMeta: 'players:meta',
+  /**
+   * Monotonic counter behind the demo snapshot ids: `INCR` yields 1 → `-early`,
+   * 2 → `-early2` … so each manual snapshot of a week gets a distinct output id.
+   * Demo-only; not part of the real close path.
+   */
+  earlyCount: (weekId: WeekId): string => `demo:earlyCount:${weekId}`,
 } as const;

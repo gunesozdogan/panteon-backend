@@ -200,3 +200,51 @@ describe('closeWeek (Redis + Postgres + Mongo mocked)', () => {
     expect(fakeRedis.del).toHaveBeenCalled();
   });
 });
+
+describe('closeWeek — demo snapshot (outputWeekId + reset:false)', () => {
+  const EARLY = '2026-W30-early';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    pg.paidKeys.clear();
+    pg.wallets.clear();
+    mongo.archived.clear();
+    order.length = 0;
+
+    fakeRedis.zcard.mockResolvedValue(board.length);
+    fakeRedis.zrevrange.mockResolvedValue(flat(board));
+    fakeRedis.get.mockResolvedValue('100000');
+  });
+
+  it('reads the source board but seals payouts + archive under the output id', async () => {
+    const res = await closeWeek(WEEK, { outputWeekId: EARLY, reset: false });
+
+    expect(res.weekId).toBe(EARLY);
+    expect(mongo.archived.has(EARLY)).toBe(true);
+    expect(mongo.archived.has(WEEK)).toBe(false);
+    expect(pg.paidKeys.has(`${EARLY}:p1`)).toBe(true);
+    expect(pg.paidKeys.has(`${WEEK}:p1`)).toBe(false);
+  });
+
+  it('does NOT reset the live board (Redis keys untouched)', async () => {
+    await closeWeek(WEEK, { outputWeekId: EARLY, reset: false });
+    expect(fakeRedis.del).not.toHaveBeenCalled();
+  });
+
+  it('still credits wallets (real money moves for the demo)', async () => {
+    const res = await closeWeek(WEEK, { outputWeekId: EARLY, reset: false });
+    expect(pg.wallets.get('p1')).toBe(400);
+    const credited = [...pg.wallets.values()].reduce((s, v) => s + v, 0);
+    expect(credited).toBe(res.totalDistributed);
+  });
+
+  it('a later real close of the same source pays again (distinct week_id) — the documented double-credit', async () => {
+    await closeWeek(WEEK, { outputWeekId: EARLY, reset: false });
+    const afterSnapshot = pg.wallets.get('p1')!;
+    const real = await closeWeek(WEEK);
+    expect(real.weekId).toBe(WEEK);
+    expect(real.playersPaid).toBeGreaterThan(0);
+    expect(pg.wallets.get('p1')).toBe(afterSnapshot + 400);
+    expect(fakeRedis.del).toHaveBeenCalled();
+  });
+});
