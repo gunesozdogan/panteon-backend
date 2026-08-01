@@ -5,6 +5,7 @@ import { eventsRouter } from './routes/events.js';
 import { leaderboardRouter } from './routes/leaderboard.js';
 import { historyRouter } from './routes/history.js';
 import { sampleRouter } from './routes/sample.js';
+import { adminRouter } from './routes/admin.js';
 
 export function createApp(): Application {
   const app = express();
@@ -17,6 +18,7 @@ export function createApp(): Application {
   app.use(leaderboardRouter);
   app.use(historyRouter);
   app.use(sampleRouter);
+  app.use(adminRouter);
 
   return app;
 }

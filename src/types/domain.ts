@@ -87,3 +87,27 @@ export interface PlayerSampleResponse {
   /** Random players, sorted by rank; at least one is in the top 100. */
   players: PlayerSample[];
 }
+
+/**
+ * Summary returned by the close-week routine (`POST /admin/close-week`). The
+ * full standings go to Mongo; this is the lean audit summary for the caller.
+ * All money fields are integer minor units.
+ */
+export interface CloseWeekResult {
+  weekId: WeekId;
+  /** ISO-8601 timestamp of when the week was closed. */
+  closedAt: string;
+  /** Raw total earned this week (`earn_total:{weekId}`). */
+  earnTotal: number;
+  /** Distributable pool = floor(earnTotal * 2 / 100). */
+  pool: number;
+  /** Players who received a payout this run (0 on an idempotent re-run). */
+  playersPaid: number;
+  /** Σ of prizes actually credited to wallets this run. */
+  totalDistributed: number;
+  /**
+   * True when there was nothing to close (the week's Redis key was already
+   * reset, or the board was empty) — the routine was a safe no-op.
+   */
+  alreadyClosed: boolean;
+}

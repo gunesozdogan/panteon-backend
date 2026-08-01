@@ -11,6 +11,17 @@ const envSchema = z.object({
     .string()
     .default('http://localhost:5173,http://localhost:5174')
     .transform((s) => s.split(',').map((o) => o.trim()).filter(Boolean)),
+  ENABLE_CRON: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  /**
+   * When the weekly close runs. Default: Monday 00:05 UTC — just after the ISO
+   * week boundary, so it closes the week that has just ended.
+   */
+  CLOSE_WEEK_CRON: z.string().default('5 0 * * 1'),
+  /** Timezone for the cron expression. UTC so the boundary matches weekId. */
+  CRON_TIMEZONE: z.string().default('UTC'),
 });
 
 const parsed = envSchema.safeParse(process.env);
