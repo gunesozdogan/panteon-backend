@@ -7,6 +7,10 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   MONGO_URL: z.string().min(1, 'MONGO_URL is required'),
   MONGO_DB: z.string().min(1).default('leaderboard'),
+  CORS_ORIGINS: z
+    .string()
+    .default('http://localhost:5173,http://localhost:5174')
+    .transform((s) => s.split(',').map((o) => o.trim()).filter(Boolean)),
 });
 
 const parsed = envSchema.safeParse(process.env);

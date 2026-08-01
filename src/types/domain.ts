@@ -42,3 +42,48 @@ export interface EarnEvent {
   /** Amount earned this event, integer minor units (> 0). */
   amount: number;
 }
+
+/**
+ * One row of a closed week's final standings. Unlike the live `LeaderboardEntry`,
+ * `prize` is always present here (the week has been distributed).
+ */
+export interface WeeklyStanding {
+  /** 1-indexed final rank. */
+  rank: number;
+  playerId: string;
+  username: string;
+  /** Final weekly earnings, integer minor units. */
+  score: number;
+  /** Prize won, integer minor units (0 for ranks outside the paid board). */
+  prize: number;
+}
+
+/**
+ * A closed week, archived as a single MongoDB document (one doc per week).
+ */
+export interface WeeklyStandingsDoc {
+  weekId: WeekId;
+  /** ISO-8601 timestamp of when the week was closed. */
+  closedAt: string;
+  standings: WeeklyStanding[];
+}
+
+/**
+ * One row of the demo player picker's random sample (`GET /players/sample`).
+ * Auth is scoped out, so a reviewer switches "who am I" by picking a playerId;
+ * this feeds that picker with real, freshly-sampled players + their labels.
+ */
+export interface PlayerSample {
+  playerId: string;
+  username: string;
+  /** 1-indexed current rank. */
+  rank: number;
+  /** True when rank <= 100 — labels the picker ("Top 100" vs "Outside"). */
+  inTop100: boolean;
+}
+
+export interface PlayerSampleResponse {
+  weekId: WeekId;
+  /** Random players, sorted by rank; at least one is in the top 100. */
+  players: PlayerSample[];
+}
