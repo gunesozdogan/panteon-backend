@@ -29,6 +29,18 @@ const envSchema = z.object({
    * (`closeWeek` zcard guard). Default 4 (~one month of catch-up).
    */
   CLOSE_SWEEP_WEEKS: z.coerce.number().int().positive().default(4),
+  /**
+   * Enables the demo "live traffic" endpoint (`POST /admin/simulate`) that keeps
+   * the board visibly moving. Default ON because this whole service is a case
+   * demo and the live board is a core part of it — a real production deploy,
+   * where earns come from actual game clients, would set this `false`. The
+   * `npm run simulate` script talks to the service directly and is NOT gated by
+   * this flag. See docs/live-data-flow.md.
+   */
+  ENABLE_SIMULATOR: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
 });
 
 const parsed = envSchema.safeParse(process.env);
