@@ -70,6 +70,18 @@ describe('getLeaderboard (Redis mocked)', () => {
     expect(fakeRedis.zrevrank).not.toHaveBeenCalled();
   });
 
+  it('returns the live pool as 2% of earn_total (floored), 0 when unset', async () => {
+    // Default get() → null (earn_total unset) → pool 0.
+    expect((await getLeaderboard(WEEK)).pool).toBe(0);
+
+    // earn_total = 1_000_050 → floor(1_000_050 * 2 / 100) = 20_001.
+    // Branch by key so the top-100 cache stays a miss (null) and rebuilds.
+    fakeRedis.get.mockImplementation((key: string) =>
+      Promise.resolve(key === `earn_total:${WEEK}` ? '1000050' : null),
+    );
+    expect((await getLeaderboard(WEEK)).pool).toBe(20_001);
+  });
+
   it('player not on the board (zrevrank → null) → me omitted', async () => {
     fakeRedis.zrevrank.mockResolvedValue(null);
 
