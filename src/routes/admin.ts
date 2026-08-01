@@ -1,9 +1,11 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { closeWeek } from '../services/closeWeek.js';
+import { simulateEarns, SIMULATE_DEFAULTS } from '../services/simulate.js';
 import { getCurrentWeekId } from '../utils/week.js';
 import { getRedis } from '../db/redis.js';
 import { keys } from '../utils/keys.js';
+import { env } from '../config/env.js';
 
 export const adminRouter = Router();
 
@@ -67,6 +69,53 @@ adminRouter.post('/admin/close-week', async (req: Request, res: Response) => {
     res.status(200).json(result);
   } catch (err) {
     console.error('[admin/close-week] failed:', err);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+/** Cap so a stray/hostile call can't apply a huge earn burst in one request. */
+const SIMULATE_MAX_COUNT = 100;
+
+const simulateSchema = z.object({
+  count: z.number().int().positive().max(SIMULATE_MAX_COUNT).optional(),
+});
+
+/**
+ * `POST /admin/simulate` — demo "live traffic": apply a small batch of random
+ * earns to the current week so the board keeps moving. The frontend fires this
+ * on its poll tick (default-on "Live demo" toggle), which is what makes the
+ * deployed board feel alive without any in-process timer — the browser drives
+ * it, so the API stays stateless (every instance is equal). Gated by
+ * `ENABLE_SIMULATOR` (default on for the demo; off for a real production
+ * deploy). Only touches Redis ranking + earn_total. See docs/live-data-flow.md.
+ */
+adminRouter.post('/admin/simulate', async (req: Request, res: Response) => {
+  if (!env.ENABLE_SIMULATOR) {
+    res.status(403).json({ error: 'simulator_disabled' });
+    return;
+  }
+
+  const parsed = simulateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({
+      error: 'invalid_body',
+      issues: parsed.error.issues.map((i) => ({
+        path: i.path.join('.'),
+        message: i.message,
+      })),
+    });
+    return;
+  }
+
+  try {
+    const weekId = getCurrentWeekId();
+    const result = await simulateEarns(weekId, {
+      ...SIMULATE_DEFAULTS,
+      ...(parsed.data.count !== undefined ? { count: parsed.data.count } : {}),
+    });
+    res.status(200).json(result);
+  } catch (err) {
+    console.error('[admin/simulate] failed:', err);
     res.status(500).json({ error: 'internal_error' });
   }
 });
