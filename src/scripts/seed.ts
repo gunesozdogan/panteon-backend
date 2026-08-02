@@ -25,6 +25,13 @@ import type { Player } from '../types/domain.js';
 const DEFAULT_COUNT = 5000;
 const MAX_SCORE = 1_000_000; // minor units
 
+// Redis args are queued into the pipeline in chunks so we never spread a giant
+// array into a single call — `zadd(key, ...args)` with hundreds of thousands of
+// arguments overflows the JS call stack (RangeError: Maximum call stack size
+// exceeded) at large `count`. Each ZADD arg is a (score, member) pair and each
+// HSET arg a (field, value) pair, so a chunk is 2 * CHUNK_PAIRS elements.
+const CHUNK_PAIRS = 5000;
+
 async function seed(count: number): Promise<void> {
   const redis = getRedis();
   const weekId = getCurrentWeekId();
@@ -50,11 +57,17 @@ async function seed(count: number): Promise<void> {
     total += score;
   }
 
-  // Bulk-load in one round trip. earn_total is set to the sum of scores so the
-  // pool math (2% of total) has realistic input to work on at close-week.
+  // Bulk-load in one round trip (one pipeline), but queue the ZADD/HSET in
+  // chunks so a large count never spreads a giant array into a single call.
+  // earn_total is set to the sum of scores so the pool math (2% of total) has
+  // realistic input to work on at close-week.
   const pipeline = redis.multi();
-  pipeline.zadd(lbKey, ...zaddArgs);
-  pipeline.hset(metaKey, ...metaArgs);
+  for (let i = 0; i < zaddArgs.length; i += CHUNK_PAIRS * 2) {
+    pipeline.zadd(lbKey, ...zaddArgs.slice(i, i + CHUNK_PAIRS * 2));
+  }
+  for (let i = 0; i < metaArgs.length; i += CHUNK_PAIRS * 2) {
+    pipeline.hset(metaKey, ...metaArgs.slice(i, i + CHUNK_PAIRS * 2));
+  }
   pipeline.set(earnKey, total);
   await pipeline.exec();
 

@@ -25,6 +25,7 @@ const { fakeRedis, pipeline } = vi.hoisted(() => {
   };
 
   const fakeRedis = {
+    zcard: vi.fn(),
     zrandmember: vi.fn(),
     multi: vi.fn(() => pipeline),
   };
@@ -34,7 +35,7 @@ const { fakeRedis, pipeline } = vi.hoisted(() => {
 
 vi.mock('../src/db/redis.js', () => ({ getRedis: () => fakeRedis }));
 
-import { simulateEarns } from '../src/services/simulate.js';
+import { simulateEarns, SIMULATE_DEFAULTS } from '../src/services/simulate.js';
 import type { WeekId } from '../src/types/domain.js';
 
 const WEEK = '2026-W31' as WeekId;
@@ -47,9 +48,15 @@ beforeEach(() => {
 
 describe('simulateEarns', () => {
   it('bumps each random player and increments earn_total by the batch sum', async () => {
+    fakeRedis.zcard.mockResolvedValue(1000);
     fakeRedis.zrandmember.mockResolvedValue(['p3', 'p7', 'p12']);
 
-    const result = await simulateEarns(WEEK, { count: 3, minAmount: 100, maxAmount: 100 });
+    const result = await simulateEarns(WEEK, {
+      ...SIMULATE_DEFAULTS,
+      count: 3,
+      minAmount: 100,
+      maxAmount: 100,
+    });
 
     expect(fakeRedis.zrandmember).toHaveBeenCalledWith('lb:2026-W31', 3);
     expect(pipeline.zincrbyArgs).toEqual([
@@ -59,13 +66,46 @@ describe('simulateEarns', () => {
     ]);
     expect(pipeline.incrbyArgs).toEqual([['earn_total:2026-W31', 300]]);
     expect(pipeline.exec).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ weekId: WEEK, playersHit: 3, totalEarned: 300 });
+    expect(result).toEqual({ weekId: WEEK, boardSize: 1000, playersHit: 3, totalEarned: 300 });
+  });
+
+  it('defaults to 1% of the board when no explicit count is given', async () => {
+    fakeRedis.zcard.mockResolvedValue(100_000);
+    fakeRedis.zrandmember.mockResolvedValue(['x']);
+
+    await simulateEarns(WEEK, SIMULATE_DEFAULTS);
+
+    expect(fakeRedis.zrandmember).toHaveBeenCalledWith('lb:2026-W31', 1000);
+  });
+
+  it('floors the fraction to minCount on a tiny board', async () => {
+    fakeRedis.zcard.mockResolvedValue(50);
+    fakeRedis.zrandmember.mockResolvedValue(['x']);
+
+    await simulateEarns(WEEK, SIMULATE_DEFAULTS);
+
+    expect(fakeRedis.zrandmember).toHaveBeenCalledWith('lb:2026-W31', SIMULATE_DEFAULTS.minCount);
+  });
+
+  it('caps the fraction at maxCount on a huge board', async () => {
+    fakeRedis.zcard.mockResolvedValue(10_000_000);
+    fakeRedis.zrandmember.mockResolvedValue(['x']);
+
+    await simulateEarns(WEEK, SIMULATE_DEFAULTS);
+
+    expect(fakeRedis.zrandmember).toHaveBeenCalledWith('lb:2026-W31', SIMULATE_DEFAULTS.maxCount);
   });
 
   it('keeps every earn within the requested range', async () => {
+    fakeRedis.zcard.mockResolvedValue(1000);
     fakeRedis.zrandmember.mockResolvedValue(['a', 'b', 'c', 'd', 'e']);
 
-    await simulateEarns(WEEK, { count: 5, minAmount: 10, maxAmount: 20 });
+    await simulateEarns(WEEK, {
+      ...SIMULATE_DEFAULTS,
+      count: 5,
+      minAmount: 10,
+      maxAmount: 20,
+    });
 
     for (const [, amount] of pipeline.zincrbyArgs) {
       expect(amount).toBeGreaterThanOrEqual(10);
@@ -74,11 +114,12 @@ describe('simulateEarns', () => {
   });
 
   it('is a no-op on an empty board (no pipeline, no writes)', async () => {
-    fakeRedis.zrandmember.mockResolvedValue([]);
+    fakeRedis.zcard.mockResolvedValue(0);
 
-    const result = await simulateEarns(WEEK, { count: 8, minAmount: 100, maxAmount: 500 });
+    const result = await simulateEarns(WEEK, SIMULATE_DEFAULTS);
 
+    expect(fakeRedis.zrandmember).not.toHaveBeenCalled();
     expect(fakeRedis.multi).not.toHaveBeenCalled();
-    expect(result).toEqual({ weekId: WEEK, playersHit: 0, totalEarned: 0 });
+    expect(result).toEqual({ weekId: WEEK, boardSize: 0, playersHit: 0, totalEarned: 0 });
   });
 });

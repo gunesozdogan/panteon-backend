@@ -5,7 +5,7 @@
  *
  * Usage:  npm run simulate [intervalMs] [count]
  *   intervalMs  gap between batches (default 2000)
- *   count       players bumped per batch (default SIMULATE_DEFAULTS.count)
+ *   count       players bumped per batch (default: 1% of the live board)
  *
  * Each tick applies a batch of random earns to random existing players via the
  * SAME `simulateEarns` service the `POST /admin/simulate` endpoint uses, so
@@ -20,13 +20,13 @@ import { simulateEarns, SIMULATE_DEFAULTS } from '../services/simulate.js';
 import { getCurrentWeekId } from '../utils/week.js';
 
 const intervalMs = Number(process.argv[2] ?? 2000);
-const count = Number(process.argv[3] ?? SIMULATE_DEFAULTS.count);
+const count = process.argv[3] !== undefined ? Number(process.argv[3]) : undefined;
 
 if (!Number.isInteger(intervalMs) || intervalMs < 100) {
   console.error(`[simulate] invalid intervalMs: ${process.argv[2]} (min 100)`);
   process.exit(1);
 }
-if (!Number.isInteger(count) || count <= 0) {
+if (count !== undefined && (!Number.isInteger(count) || count <= 0)) {
   console.error(`[simulate] invalid count: ${process.argv[3]}`);
   process.exit(1);
 }
@@ -48,14 +48,14 @@ process.on('SIGTERM', () => void shutdown());
 async function main(): Promise<void> {
   getRedis();
   console.log(
-    `[simulate] weekId=${getCurrentWeekId()} interval=${intervalMs}ms count=${count} — Ctrl-C to stop`,
+    `[simulate] weekId=${getCurrentWeekId()} interval=${intervalMs}ms count=${count ?? `${SIMULATE_DEFAULTS.fraction * 100}% of board`} — Ctrl-C to stop`,
   );
 
   while (running) {
     try {
       const result = await simulateEarns(getCurrentWeekId(), {
         ...SIMULATE_DEFAULTS,
-        count,
+        ...(count !== undefined ? { count } : {}),
       });
       ticks += 1;
       if (result.playersHit === 0) {
