@@ -15,10 +15,13 @@ export const adminRouter = Router();
  *    for closing seeded demo data on the spot). The cron sweeps its own weeks.
  *    Must look like a plain ISO week (`2026-W31`); snapshot ids are minted
  *    server-side, never accepted from the client.
- *  - `early` (optional): run a DEMO SNAPSHOT of the current live week instead of
- *    a real close. Reads current standings, distributes + archives them under a
- *    server-minted `-early` id, and DOES NOT reset the board — the week keeps
- *    running.
+ *  - `early` (optional): run a DEMO close of the current live week on demand.
+ *    Reads current standings, distributes + archives them under a server-minted
+ *    `-early` id, credits wallets, AND resets the live board (scores + pool back
+ *    to 0). The calendar `weekId` is unchanged (still `2026-W31`), so the `-early`
+ *    output id is what keeps repeated demo closes from colliding in Mongo. Each
+ *    close pays only the earnings accumulated since the previous one, so the total
+ *    distributed stays exactly 2% of earnings (no over-distribution). See §30/§37.
  */
 const bodySchema = z.object({
   weekId: z
@@ -60,7 +63,7 @@ adminRouter.post('/admin/close-week', async (req: Request, res: Response) => {
     if (parsed.data.early) {
       const sourceWeekId = getCurrentWeekId();
       const outputWeekId = await nextEarlyWeekId(sourceWeekId);
-      const result = await closeWeek(sourceWeekId, { outputWeekId, reset: false });
+      const result = await closeWeek(sourceWeekId, { outputWeekId, reset: true });
       res.status(200).json(result);
       return;
     }

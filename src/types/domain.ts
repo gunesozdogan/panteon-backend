@@ -114,6 +114,32 @@ export interface PlayerSampleResponse {
   players: PlayerSample[];
 }
 
+/** One prize a player won in a past close (a row of the Postgres `payouts` table). */
+export interface PlayerPayout {
+  weekId: WeekId;
+  /** Final rank in that close. */
+  rank: number;
+  /** Prize won, integer minor units. */
+  prize: number;
+  /** ISO-8601 timestamp the prize was distributed. */
+  distributedAt: string;
+}
+
+/**
+ * A player's durable money view (`GET /players/:playerId/wallet`) — sourced from
+ * Postgres (the money source of truth), NOT Redis. `balance` is the cumulative
+ * winnings credited across all closes; `payouts` is the per-close breakdown.
+ * All money fields are integer minor units.
+ */
+export interface PlayerWalletResponse {
+  playerId: string;
+  username: string;
+  /** Total winnings credited to the wallet, integer minor units. */
+  balance: number;
+  /** Prizes won per close, newest first. */
+  payouts: PlayerPayout[];
+}
+
 /**
  * Summary returned by the close-week routine (`POST /admin/close-week`). The
  * full standings go to Mongo; this is the lean audit summary for the caller.

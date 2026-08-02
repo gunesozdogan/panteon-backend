@@ -6,7 +6,7 @@
  * `players:meta` in Redis is a warm cache, but Postgres is authoritative.
  */
 import { getPool } from '../db/postgres.js';
-import type { Player } from '../types/domain.js';
+import type { Player, PlayerWalletResponse } from '../types/domain.js';
 
 /**
  * Resolve usernames for the given player ids in ONE query (`= ANY($1)`), never
@@ -24,6 +24,55 @@ export async function getUsernames(
   );
   for (const row of res.rows) map.set(row.id, row.username);
   return map;
+}
+
+/**
+ * A player's durable money view: wallet balance + per-close payout history, both
+ * from Postgres (the money source of truth). Two small indexed queries — one for
+ * identity+balance (`players` LEFT JOIN `wallets`), one for the payout list
+ * (`idx_payouts_week` covers week filters; player filter is a cheap scan at case
+ * scale). Returns `null` when the player id is unknown → the route answers 404.
+ * `bigint` columns come back from `pg` as strings, parsed to integer here.
+ */
+export async function getPlayerWallet(
+  playerId: string,
+): Promise<PlayerWalletResponse | null> {
+  const pool = getPool();
+
+  const identity = await pool.query<{ username: string; balance: string }>(
+    `SELECT p.username, COALESCE(w.balance, 0)::text AS balance
+       FROM players p
+       LEFT JOIN wallets w ON w.player_id = p.id
+      WHERE p.id = $1`,
+    [playerId],
+  );
+  const row = identity.rows[0];
+  if (!row) return null;
+
+  const payoutRows = await pool.query<{
+    week_id: string;
+    final_rank: number;
+    prize_amount: string;
+    distributed_at: Date;
+  }>(
+    `SELECT week_id, final_rank, prize_amount, distributed_at
+       FROM payouts
+      WHERE player_id = $1
+      ORDER BY distributed_at DESC`,
+    [playerId],
+  );
+
+  return {
+    playerId,
+    username: row.username,
+    balance: Number(row.balance),
+    payouts: payoutRows.rows.map((p) => ({
+      weekId: p.week_id,
+      rank: p.final_rank,
+      prize: Number(p.prize_amount),
+      distributedAt: new Date(p.distributed_at).toISOString(),
+    })),
+  };
 }
 
 /**

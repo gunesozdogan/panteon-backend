@@ -201,7 +201,7 @@ describe('closeWeek (Redis + Postgres + Mongo mocked)', () => {
   });
 });
 
-describe('closeWeek — demo snapshot (outputWeekId + reset:false)', () => {
+describe('closeWeek — demo early close (outputWeekId + reset:true)', () => {
   const EARLY = '2026-W30-early';
 
   beforeEach(() => {
@@ -217,7 +217,7 @@ describe('closeWeek — demo snapshot (outputWeekId + reset:false)', () => {
   });
 
   it('reads the source board but seals payouts + archive under the output id', async () => {
-    const res = await closeWeek(WEEK, { outputWeekId: EARLY, reset: false });
+    const res = await closeWeek(WEEK, { outputWeekId: EARLY, reset: true });
 
     expect(res.weekId).toBe(EARLY);
     expect(mongo.archived.has(EARLY)).toBe(true);
@@ -226,25 +226,33 @@ describe('closeWeek — demo snapshot (outputWeekId + reset:false)', () => {
     expect(pg.paidKeys.has(`${WEEK}:p1`)).toBe(false);
   });
 
-  it('does NOT reset the live board (Redis keys untouched)', async () => {
-    await closeWeek(WEEK, { outputWeekId: EARLY, reset: false });
-    expect(fakeRedis.del).not.toHaveBeenCalled();
+  it('resets the live board (source Redis keys dropped)', async () => {
+    await closeWeek(WEEK, { outputWeekId: EARLY, reset: true });
+    expect(fakeRedis.del).toHaveBeenCalledWith(
+      'lb:2026-W30',
+      'earn_total:2026-W30',
+      'lb:top100:2026-W30',
+    );
   });
 
-  it('still credits wallets (real money moves for the demo)', async () => {
-    const res = await closeWeek(WEEK, { outputWeekId: EARLY, reset: false });
+  it('credits wallets (real money moves for the demo)', async () => {
+    const res = await closeWeek(WEEK, { outputWeekId: EARLY, reset: true });
     expect(pg.wallets.get('p1')).toBe(400);
     const credited = [...pg.wallets.values()].reduce((s, v) => s + v, 0);
     expect(credited).toBe(res.totalDistributed);
   });
 
-  it('a later real close of the same source pays again (distinct week_id) — the documented double-credit', async () => {
-    await closeWeek(WEEK, { outputWeekId: EARLY, reset: false });
-    const afterSnapshot = pg.wallets.get('p1')!;
-    const real = await closeWeek(WEEK);
-    expect(real.weekId).toBe(WEEK);
-    expect(real.playersPaid).toBeGreaterThan(0);
-    expect(pg.wallets.get('p1')).toBe(afterSnapshot + 400);
-    expect(fakeRedis.del).toHaveBeenCalled();
+  it('resetting means a second close of the empty board does NOT double-pay', async () => {
+    fakeRedis.zcard.mockReset();
+    fakeRedis.zcard.mockResolvedValueOnce(board.length).mockResolvedValueOnce(0);
+
+    await closeWeek(WEEK, { outputWeekId: EARLY, reset: true });
+    const afterFirst = pg.wallets.get('p1')!;
+    expect(afterFirst).toBe(400);
+
+    const second = await closeWeek(WEEK, { outputWeekId: '2026-W30-early2', reset: true });
+    expect(second.alreadyClosed).toBe(true);
+    expect(second.playersPaid).toBe(0);
+    expect(pg.wallets.get('p1')).toBe(afterFirst);
   });
 });
