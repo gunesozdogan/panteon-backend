@@ -63,3 +63,45 @@ export async function getPlayerSample(
   players.sort((a, b) => a.rank - b.rank);
   return { weekId, players };
 }
+
+/**
+ * Current rank/label for a SPECIFIC set of player ids (not a random sample) —
+ * backs the picker's in-place rank refresh: the same faces stay, only their
+ * ranks update as the live board moves. Returns only ids still on the board
+ * (ranked); an id that has dropped off (e.g. after a week reset) is omitted, so
+ * the caller can tell "the sample is stale, re-roll" from "just re-rank". Same
+ * `PlayerSample` shape as {@link getPlayerSample}, sorted by rank.
+ */
+export async function getPlayerRanks(
+  weekId: WeekId,
+  ids: readonly string[],
+): Promise<PlayerSampleResponse> {
+  const idList = [...new Set(ids)].slice(0, MAX_N);
+  if (idList.length === 0) return { weekId, players: [] };
+
+  const redis = getRedis();
+  const lbKey = keys.leaderboard(weekId);
+  const total = await redis.zcard(lbKey);
+  if (total === 0) return { weekId, players: [] };
+
+  const pipeline = redis.pipeline();
+  for (const id of idList) pipeline.zrevrank(lbKey, id);
+  const ranked = await pipeline.exec();
+
+  const names = await resolveUsernames(idList);
+
+  const players: PlayerSample[] = [];
+  idList.forEach((id, i) => {
+    const rank0 = (ranked?.[i]?.[1] ?? null) as number | null;
+    if (rank0 === null) return;
+    players.push({
+      playerId: id,
+      username: names.get(id) ?? id,
+      rank: rank0 + 1,
+      inTop100: rank0 < TOP_N,
+    });
+  });
+
+  players.sort((a, b) => a.rank - b.rank);
+  return { weekId, players };
+}
