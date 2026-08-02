@@ -73,8 +73,7 @@ adminRouter.post('/admin/close-week', async (req: Request, res: Response) => {
   }
 });
 
-/** Cap so a stray/hostile call can't apply a huge earn burst in one request. */
-const SIMULATE_MAX_COUNT = 100;
+const SIMULATE_MAX_COUNT = SIMULATE_DEFAULTS.maxCount;
 
 const simulateSchema = z.object({
   count: z.number().int().positive().max(SIMULATE_MAX_COUNT).optional(),

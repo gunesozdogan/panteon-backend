@@ -41,6 +41,20 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  /**
+   * Share of the live board bumped per simulate tick when no explicit count is
+   * given (0.001 = 0.1%). Kept deliberately small so a big board doesn't
+   * generate too many write commands per tick on a metered/free managed Redis;
+   * tune up if you want the board to move faster. In (0, 1].
+   */
+  SIMULATE_FRACTION: z.coerce.number().gt(0).max(1).default(0.001),
+  /** Floor so a tiny/local board still visibly moves each tick. */
+  SIMULATE_MIN_COUNT: z.coerce.number().int().positive().default(10),
+  /**
+   * Ceiling on players bumped per tick — bounds one tick's write burst (and
+   * caps command usage on a metered Redis) no matter how large the board grows.
+   */
+  SIMULATE_MAX_COUNT: z.coerce.number().int().positive().default(2_000),
 });
 
 const parsed = envSchema.safeParse(process.env);
